@@ -1,0 +1,39 @@
+{
+  "name": "bv-install",
+  "version": "1.0.1",
+  "description": "transform windows portable folders into native installed applications.",
+  "main": "src/cli.js",
+  "bin": {
+    "bv-install": "bin/bv-install.js"
+  },
+  "type": "commonjs",
+  "scripts": {
+    "start": "node bin/bv-install.js"
+  },
+  "preferGlobal": true,
+  "engines": {
+    "node": ">=16.7.0"
+  },
+  "files": [
+    "bin",
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "windows",
+    "portable",
+    "installer",
+    "cli",
+    "native",
+    "shortcut",
+    "registry",
+    "environment-path"
+  ],
+  "author": "xbvuno",
+  "license": "MIT",
+  "dependencies": {
+    "@clack/prompts": "^0.7.0",
+    "commander": "^11.1.0"
+  }
+}
