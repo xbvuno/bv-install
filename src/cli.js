@@ -43,20 +43,20 @@ program
 
         const { checkIsAdmin } = require('./core/registry');
         const { addToPath } = require('./core/installer');
+        const { intro, outro, log } = require('@clack/prompts');
         
         const isAdmin = await checkIsAdmin();
         const modeStr = isAdmin ? 'system-wide' : 'local user';
         
-        console.log(picocolors.cyan(`\n┌  bv-install`));
-        console.log(`${picocolors.cyan('│')}  adding folder to environment path (${modeStr})`);
+        intro(picocolors.bgCyan(picocolors.black(' bv-install ')));
+        log.info(`adding folder to environment path (${modeStr})`);
         
         try {
           await addToPath(resolvedPath, isAdmin);
-          console.log(`${picocolors.cyan('│')}  added: ${picocolors.bold(resolvedPath)}`);
-          console.log(`${picocolors.cyan('└')}  path updated successfully\n`);
+          log.success(`added: ${picocolors.bold(resolvedPath)}`);
+          outro(picocolors.green('path updated successfully'));
         } catch (e) {
-          console.log(`${picocolors.cyan('│')}  ${picocolors.red('failed')}`);
-          console.log(`${picocolors.cyan('└')}  ${picocolors.red('error: ' + e.message)}\n`);
+          outro(picocolors.red('failed: ' + e.message));
           process.exit(1);
         }
         process.exit(0);

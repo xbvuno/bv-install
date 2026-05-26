@@ -1,4 +1,4 @@
-const { intro, outro, spinner, text, select, confirm } = require('@clack/prompts');
+const { intro, outro, spinner, log, text, select, confirm, isCancel } = require('@clack/prompts');
 const picocolors = require('picocolors');
 const path = require('path');
 const fs = require('fs').promises;
@@ -7,17 +7,6 @@ const { extractZipToTemp, extractExeMetadata, resolveDestinationPath, installFol
 const { createShortcut, resolveShortcutPaths } = require('../core/shortcut');
 const { checkIsAdmin, registerUninstallEntry } = require('../core/registry');
 
-/**
- * Helper to clear a specific number of lines in the terminal.
- * Used to remove temporary prompt outputs and maintain a custom, pristine flow layout.
- * 
- * @param {number} count Number of lines to clear upwards.
- */
-function clearLines(count) {
-  for (let i = 0; i < count; i++) {
-    process.stdout.write('\x1B[1A\x1B[2K');
-  }
-}
 
 /**
  * Runs a task with an inline spinner that clears itself completely upon completion.
@@ -70,16 +59,15 @@ async function runInstallerWizard(targetFolder) {
     let absoluteSource = absoluteSourceOriginal;
 
     // 1. Stylized lowercase intro
-    intro(picocolors.cyan('bv-install'));
+    intro(picocolors.bgCyan(picocolors.black(' bv-install ')));
 
     // Privilege warning in low-noise lowercase
     const isAdmin = await checkIsAdmin();
     if (isAdmin) {
-      console.log(`${picocolors.cyan('│')}  ${picocolors.yellow('running as admin • system-wide installation enabled')}`);
+      log.info(picocolors.yellow('running as admin • system-wide installation enabled'));
     } else {
-      console.log(`${picocolors.cyan('│')}  ${picocolors.dim('running as user • local installation only')}`);
+      log.info(picocolors.dim('running as user • local installation only'));
     }
-    console.log(`${picocolors.cyan('│')}`);
 
     // Check if zip and extract
     const stats = await fs.stat(absoluteSourceOriginal);
@@ -100,12 +88,12 @@ async function runInstallerWizard(targetFolder) {
       candidates = scanResult.candidates;
       recommended = scanResult.recommended;
     } catch (error) {
-      console.log(`${picocolors.cyan('└')}  ${picocolors.red('error scanning folder: ' + error.message)}\n`);
+      outro(picocolors.red('error scanning folder: ' + error.message));
       return;
     }
 
     if (candidates.length === 0) {
-      console.log(`${picocolors.cyan('└')}  ${picocolors.red('no executables found in target folder')}\n`);
+      outro(picocolors.red('no executables found in target folder'));
       return;
     }
 
@@ -116,9 +104,7 @@ async function runInstallerWizard(targetFolder) {
       selectedExe = c.name;
       const sizeMB = (c.size / (1024 * 1024)).toFixed(1);
       const typeStr = c.isCli ? 'cli' : 'gui';
-      console.log(`${picocolors.cyan('◆')}  main exe`);
-      console.log(`${picocolors.cyan('│')}  ${picocolors.bold(selectedExe)} (${sizeMB} MB) ${picocolors.dim(`[${typeStr}]`)}  [auto-selected]`);
-      console.log(`${picocolors.cyan('│')}`);
+      log.info(`main exe: ${picocolors.bold(selectedExe)} (${sizeMB} MB) ${picocolors.dim(`[${typeStr}]`)}  [auto-selected]`);
     } else {
       // Show lowercase selection menu
       const options = candidates.map(c => {
@@ -137,19 +123,10 @@ async function runInstallerWizard(targetFolder) {
         initialValue: recommended
       });
 
-      if (typeof selectedExe === 'symbol') {
-        console.log(`${picocolors.cyan('└')}  cancelled\n`);
+      if (isCancel(selectedExe)) {
+        outro('cancelled');
         return;
       }
-      
-      // Clear the clack select prompt printout
-      clearLines(2);
-      const chosenCandidate = candidates.find(c => c.name === selectedExe);
-      const chosenSizeMB = chosenCandidate ? (chosenCandidate.size / (1024 * 1024)).toFixed(1) : '0.0';
-      const chosenTypeStr = chosenCandidate && chosenCandidate.isCli ? 'cli' : 'gui';
-      console.log(`${picocolors.cyan('◆')}  main exe`);
-      console.log(`${picocolors.cyan('│')}  ${picocolors.bold(selectedExe)} (${chosenSizeMB} MB) ${picocolors.dim(`[${chosenTypeStr}]`)}`);
-      console.log(`${picocolors.cyan('│')}`);
     }
 
     // 3.5. Find isCli of the chosen candidate
@@ -163,9 +140,7 @@ async function runInstallerWizard(targetFolder) {
     selectedExe = rootDetection.newRelativeExePath;
 
     if (absoluteSource !== originalRoot) {
-      console.log(`${picocolors.cyan('◆')}  detected app root`);
-      console.log(`${picocolors.cyan('│')}  ${picocolors.bold(path.basename(absoluteSource))}  [shifted to actual program root]`);
-      console.log(`${picocolors.cyan('│')}`);
+      log.info(`detected app root: ${picocolors.bold(path.basename(absoluteSource))}  [shifted to actual program root]`);
     }
 
     const selectedExePath = path.join(absoluteSource, selectedExe);
@@ -175,165 +150,133 @@ async function runInstallerWizard(targetFolder) {
 
     // Determine standard app name and display
     const defaultAppName = path.basename(selectedExe, '.exe');
-    
-    // Customization step (optional but standard)
     let appName = defaultAppName;
     let version = metadata.version;
     let publisher = metadata.publisher;
 
-    console.log(`${picocolors.cyan('◆')}  app`);
-    console.log(`${picocolors.cyan('│')}  ${picocolors.bold(appName)} v${version}`);
-    console.log(`${picocolors.cyan('│')}`);
+    log.info(`app: ${picocolors.bold(appName)} v${version}`);
 
     // 5. Destination path
     const safeFolderName = appName.replace(/[^a-zA-Z0-9_\-\s]/g, '').trim();
     const isSystemWide = isAdmin;
     const destDir = resolveDestinationPath(safeFolderName, isSystemWide);
 
-    console.log(`${picocolors.cyan('◆')}  install to`);
-    console.log(`${picocolors.cyan('│')}  ${picocolors.bold(destDir)}`);
-    console.log(`${picocolors.cyan('│')}`);
+    log.info(`install to: ${picocolors.bold(destDir)}`);
 
     // 5.5. PATH integration prompt for CLI apps
     let shouldAddToPath = false;
     let shouldCreateStartMenuShortcut = true;
     if (isCli) {
-      console.log(`${picocolors.cyan('◆')}  cli utility detected`);
-      console.log(`${picocolors.cyan('│')}  this app runs in the console`);
-      console.log(`${picocolors.cyan('│')}`);
+      log.info('cli utility detected (runs in terminal)');
       
       const pathConfirm = await confirm({
         message: 'add to environment path?',
         initialValue: true
       });
       
-      if (typeof pathConfirm === 'symbol') {
-        console.log(`${picocolors.cyan('└')}  cancelled\n`);
+      if (isCancel(pathConfirm)) {
+        outro('cancelled');
         return;
       }
       
       shouldAddToPath = pathConfirm;
-      
-      clearLines(2);
-      console.log(`${picocolors.cyan('◇')}  add to environment path?`);
-      console.log(`${picocolors.cyan('│')}  ${shouldAddToPath ? 'yes' : 'no'}`);
-      console.log(`${picocolors.cyan('│')}`);
 
       const shortcutConfirm = await confirm({
         message: 'create start menu shortcut?',
         initialValue: false
       });
 
-      if (typeof shortcutConfirm === 'symbol') {
-        console.log(`${picocolors.cyan('└')}  cancelled\n`);
+      if (isCancel(shortcutConfirm)) {
+        outro('cancelled');
         return;
       }
 
       shouldCreateStartMenuShortcut = shortcutConfirm;
-
-      clearLines(2);
-      console.log(`${picocolors.cyan('◇')}  create start menu shortcut?`);
-      console.log(`${picocolors.cyan('│')}  ${shouldCreateStartMenuShortcut ? 'yes' : 'no'}`);
-      console.log(`${picocolors.cyan('│')}`);
     }
 
+    // 7. Installation with live action-oriented log spinners
+    log.info('installing...');
+    
+    const shortcutPaths = await resolveShortcutPaths(appName, isSystemWide);
+    const installedExePath = path.join(destDir, selectedExe);
+    const addedPathDir = path.dirname(installedExePath);
 
-  // 7. Installation with live action-oriented log spinners
-  console.log(`${picocolors.cyan('◆')}  installing...`);
-  
-  const shortcutPaths = await resolveShortcutPaths(appName, isSystemWide);
-  const installedExePath = path.join(destDir, selectedExe);
-  const addedPathDir = path.dirname(installedExePath);
+    try {
+      // Step A: Copy Files
+      await runInstallStep('copying files', () => installFolder(absoluteSource, destDir));
 
-  try {
-    // Step A: Copy Files
-    await runInstallStep('copying files', () => installFolder(absoluteSource, destDir));
+      // Step A2: Add to PATH if requested
+      if (shouldAddToPath) {
+        await runInstallStep('adding to environment path', () => addToPath(addedPathDir, isSystemWide));
+      }
 
-    // Step A2: Add to PATH if requested
-    if (shouldAddToPath) {
-      await runInstallStep('adding to environment path', () => addToPath(addedPathDir, isSystemWide));
-    }
+      // Step B: Create Start Menu Shortcut
+      if (shouldCreateStartMenuShortcut) {
+        await runInstallStep('creating start menu shortcut', async () => {
+          await createShortcut({
+            shortcutPath: shortcutPaths.startMenu,
+            targetPath: installedExePath,
+            description: `shortcut for ${appName}`
+          });
+        });
+      }
 
-    // Step B: Create Start Menu Shortcut
-    if (shouldCreateStartMenuShortcut) {
-      await runInstallStep('creating start menu shortcut', async () => {
-        await createShortcut({
-          shortcutPath: shortcutPaths.startMenu,
-          targetPath: installedExePath,
-          description: `shortcut for ${appName}`
+      // Step C: Registry Uninstaller setup
+      await runInstallStep('registering uninstall entry', async () => {
+        await registerUninstallEntry({
+          appName: safeFolderName,
+          displayName: appName,
+          installLocation: destDir,
+          mainExePath: installedExePath,
+          version,
+          publisher,
+          startMenuShortcutPath: shouldCreateStartMenuShortcut ? shortcutPaths.startMenu : '',
+          desktopShortcutPath: shortcutPaths.desktop,
+          isSystemWide,
+          addedToPathDir: shouldAddToPath ? addedPathDir : null
         });
       });
-    }
 
-    // Step C: Registry Uninstaller setup
-    // Note: We always pass both shortcut paths to the registry uninstaller so it is ready
-    // to clean up either/both if they exist.
-    await runInstallStep('registering uninstall entry', async () => {
-      await registerUninstallEntry({
-        appName: safeFolderName,
-        displayName: appName,
-        installLocation: destDir,
-        mainExePath: installedExePath,
-        version,
-        publisher,
-        startMenuShortcutPath: shouldCreateStartMenuShortcut ? shortcutPaths.startMenu : '',
-        desktopShortcutPath: shortcutPaths.desktop,
-        isSystemWide,
-        addedToPathDir: shouldAddToPath ? addedPathDir : null
+      // 8. Desktop Shortcut Confirm Prompt (AFTER installation)
+      const createDesktopLnk = await confirm({
+        message: 'create desktop shortcut?',
+        initialValue: false
       });
-    });
 
-    // Trailing blank separator line
-    console.log(`${picocolors.cyan('│')}`);
-
-    // 8. Desktop Shortcut Confirm Prompt (AFTER installation)
-    const createDesktopLnk = await confirm({
-      message: 'create desktop shortcut?',
-      initialValue: false
-    });
-
-    if (typeof createDesktopLnk === 'symbol') {
-      console.log(`${picocolors.cyan('└')}  cancelled\n`);
-      return;
-    }
-    
-    clearLines(2);
-    console.log(`${picocolors.cyan('◇')}  create desktop shortcut?`);
-    console.log(`${picocolors.cyan('│')}  ${createDesktopLnk ? 'yes' : 'no'}`);
-    
-    if (createDesktopLnk) {
-      await runInstallStep('creating desktop shortcut', async () => {
-        await createShortcut({
-          shortcutPath: shortcutPaths.desktop,
-          targetPath: installedExePath,
-          description: `shortcut for ${appName}`
+      if (isCancel(createDesktopLnk)) {
+        outro('cancelled');
+        return;
+      }
+      
+      if (createDesktopLnk) {
+        await runInstallStep('creating desktop shortcut', async () => {
+          await createShortcut({
+            shortcutPath: shortcutPaths.desktop,
+            targetPath: installedExePath,
+            description: `shortcut for ${appName}`
+          });
         });
-      });
-    }
+      }
 
-    // Trailing blank separator line
-    console.log(`${picocolors.cyan('│')}`);
+      // Outro SUCCESS
+      log.success(`installed ${appName}`);
+      if (shouldCreateStartMenuShortcut) {
+        log.success('available in start menu');
+      }
+      if (createDesktopLnk) {
+        log.success('available on desktop');
+      }
+      if (shouldAddToPath) {
+        log.success('available in environment path');
+      }
+      log.success('available in installed apps');
+      
+      // Terminate using native clack outro!
+      outro(picocolors.green('done!'));
 
-    // Outro SUCCESS
-    console.log(`${picocolors.cyan('│')}  ${picocolors.green(`installed ${appName}`)}`);
-    if (shouldCreateStartMenuShortcut) {
-      console.log(`${picocolors.cyan('│')}  ${picocolors.green('available in start menu')}`);
+    } catch (error) {
+      outro(picocolors.red('error: ' + error.message));
     }
-    if (createDesktopLnk) {
-      console.log(`${picocolors.cyan('│')}  ${picocolors.green('available on desktop')}`);
-    }
-    if (shouldAddToPath) {
-      console.log(`${picocolors.cyan('│')}  ${picocolors.green('available in environment path')}`);
-    }
-    console.log(`${picocolors.cyan('│')}  ${picocolors.green('available in installed apps')}`);
-    
-    // Terminate using native clack outro!
-    outro(picocolors.green('done!'));
-
-  } catch (error) {
-    console.log(`${picocolors.cyan('│')}  ${picocolors.red('failed')}`);
-    console.log(`${picocolors.cyan('└')}  ${picocolors.red('error: ' + error.message)}\n`);
-  }
   } finally {
     if (tempDirToClean) {
       await fs.rm(tempDirToClean, { recursive: true, force: true }).catch(() => {});
