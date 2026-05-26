@@ -1,4 +1,4 @@
-const { intro, text, select, confirm } = require('@clack/prompts');
+const { intro, outro, spinner, text, select, confirm } = require('@clack/prompts');
 const picocolors = require('picocolors');
 const path = require('path');
 const fs = require('fs').promises;
@@ -27,26 +27,14 @@ function clearLines(count) {
  * @returns {Promise<any>}
  */
 async function runTaskWithSpinner(message, taskFunc) {
-  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-  let i = 0;
-  
-  // Draw initial spinner frame
-  process.stdout.write(`${picocolors.cyan('│')}  ${picocolors.cyan(frames[0])}  ${message}\r`);
-  
-  const interval = setInterval(() => {
-    process.stdout.write(`${picocolors.cyan('│')}  ${picocolors.cyan(frames[i])}  ${message}\r`);
-    i = (i + 1) % frames.length;
-  }, 80);
-  
+  const s = spinner();
+  s.start(message);
   try {
     const result = await taskFunc();
-    clearInterval(interval);
-    // Completely clear the line so it leaves no trace
-    process.stdout.write('\r\x1B[2K');
+    s.stop(message);
     return result;
   } catch (err) {
-    clearInterval(interval);
-    process.stdout.write('\r\x1B[2K');
+    s.stop(picocolors.red(`failed: ${message}`));
     throw err;
   }
 }
@@ -58,24 +46,13 @@ async function runTaskWithSpinner(message, taskFunc) {
  * @param {function} stepFunc Async function performing the work.
  */
 async function runInstallStep(message, stepFunc) {
-  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-  let i = 0;
-  
-  process.stdout.write(`${picocolors.cyan('│')}  ${picocolors.cyan(frames[0])}  ${message}\r`);
-  
-  const interval = setInterval(() => {
-    process.stdout.write(`${picocolors.cyan('│')}  ${picocolors.cyan(frames[i])}  ${message}\r`);
-    i = (i + 1) % frames.length;
-  }, 80);
-  
+  const s = spinner();
+  s.start(message);
   try {
     await stepFunc();
-    clearInterval(interval);
-    // Overwrite the spinner line with a static, action-oriented line as requested, clearing the line first
-    process.stdout.write(`\r\x1B[2K${picocolors.cyan('│')}  ${message}\n`);
+    s.stop(message);
   } catch (err) {
-    clearInterval(interval);
-    process.stdout.write(`\r\x1B[2K${picocolors.cyan('│')}  ${picocolors.red('failed: ' + message)}\n`);
+    s.stop(picocolors.red(`failed: ${message}`));
     throw err;
   }
 }
@@ -260,21 +237,6 @@ async function runInstallerWizard(targetFolder) {
       console.log(`${picocolors.cyan('│')}`);
     }
 
-    // 6. Proceed Continue Prompt
-    const proceed = await confirm({
-      message: 'continue?',
-      initialValue: true
-    });
-
-  if (typeof proceed === 'symbol' || !proceed) {
-    console.log(`${picocolors.cyan('└')}  cancelled\n`);
-    return;
-  }
-
-  clearLines(2);
-  console.log(`${picocolors.cyan('◇')}  continue?`);
-  console.log(`${picocolors.cyan('│')}  yes`);
-  console.log(`${picocolors.cyan('│')}`);
 
   // 7. Installation with live action-oriented log spinners
   console.log(`${picocolors.cyan('◆')}  installing...`);
@@ -353,9 +315,20 @@ async function runInstallerWizard(targetFolder) {
     console.log(`${picocolors.cyan('│')}`);
 
     // Outro SUCCESS
-    console.log(`${picocolors.cyan('└')}  installed ${appName}\n`);
-    console.log(`   available in start menu`);
-    console.log(`   available in installed apps\n`);
+    console.log(`${picocolors.cyan('│')}  ${picocolors.green(`installed ${appName}`)}`);
+    if (shouldCreateStartMenuShortcut) {
+      console.log(`${picocolors.cyan('│')}  ${picocolors.green('available in start menu')}`);
+    }
+    if (createDesktopLnk) {
+      console.log(`${picocolors.cyan('│')}  ${picocolors.green('available on desktop')}`);
+    }
+    if (shouldAddToPath) {
+      console.log(`${picocolors.cyan('│')}  ${picocolors.green('available in environment path')}`);
+    }
+    console.log(`${picocolors.cyan('│')}  ${picocolors.green('available in installed apps')}`);
+    
+    // Terminate using native clack outro!
+    outro(picocolors.green('done!'));
 
   } catch (error) {
     console.log(`${picocolors.cyan('│')}  ${picocolors.red('failed')}`);
