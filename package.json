@@ -1,6 +1,6 @@
 {
   "name": "bv-install",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "transform windows portable folders into native installed applications.",
   "main": "src/cli.js",
   "bin": {

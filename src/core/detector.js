@@ -75,12 +75,23 @@ async function findExecutablesRecursive(dir, baseDir, depth = 0, maxDepth = 4) {
         // Use relative path with forward slashes as candidate name
         const relativeName = path.relative(baseDir, fullPath).replace(/\\/g, '/');
         const subsystem = await detectExeSubsystem(fullPath);
+        
+        // Smarter isCli heuristic:
+        // 1. Subsystem 3 is CUI (Console / CLI).
+        // 2. Subsystem 2 is GUI, but it could be a CLI tool compiled as GUI (e.g. nircmd.exe to suppress console popup)
+        //    if its file name contains CLI keywords OR if it's placed in a binary folder.
+        const nameLower = file.name.toLowerCase();
+        const relativeNameLower = relativeName.toLowerCase();
+        const hasCliIndicators = /(?:cli|cmd|command|console|terminal|shell|tool|util)/i.test(nameLower);
+        const inCliDirectory = /(?:^|\/)(?:bin|cli|commands|tools|binaries)(?:\/|$)/i.test(relativeNameLower);
+        const isCli = subsystem === 3 || (subsystem === 2 && (hasCliIndicators || inCliDirectory));
+
         results.push({
           name: relativeName,
           path: fullPath,
           size: stats.size,
           subsystem,
-          isCli: subsystem === 3
+          isCli
         });
       } catch (e) {
         // Skip files that can't be read
