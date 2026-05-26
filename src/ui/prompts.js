@@ -71,11 +71,11 @@ async function runInstallStep(message, stepFunc) {
   try {
     await stepFunc();
     clearInterval(interval);
-    // Overwrite the spinner line with a static, action-oriented line as requested
-    process.stdout.write(`\r${picocolors.cyan('│')}  ${message}\n`);
+    // Overwrite the spinner line with a static, action-oriented line as requested, clearing the line first
+    process.stdout.write(`\r\x1B[2K${picocolors.cyan('│')}  ${message}\n`);
   } catch (err) {
     clearInterval(interval);
-    process.stdout.write(`\r${picocolors.cyan('│')}  ${picocolors.red('failed: ' + message)}\n`);
+    process.stdout.write(`\r\x1B[2K${picocolors.cyan('│')}  ${picocolors.red('failed: ' + message)}\n`);
     throw err;
   }
 }
@@ -135,18 +135,22 @@ async function runInstallerWizard(targetFolder) {
     // 3. Main EXE Selection / Autodetect
     let selectedExe;
     if (candidates.length === 1) {
-      selectedExe = candidates[0].name;
+      const c = candidates[0];
+      selectedExe = c.name;
+      const sizeMB = (c.size / (1024 * 1024)).toFixed(1);
+      const typeStr = c.isCli ? 'cli' : 'gui';
       console.log(`${picocolors.cyan('◆')}  main exe`);
-      console.log(`${picocolors.cyan('│')}  ${picocolors.bold(selectedExe)}  [auto-selected]`);
+      console.log(`${picocolors.cyan('│')}  ${picocolors.bold(selectedExe)} (${sizeMB} MB) ${picocolors.dim(`[${typeStr}]`)}  [auto-selected]`);
       console.log(`${picocolors.cyan('│')}`);
     } else {
       // Show lowercase selection menu
       const options = candidates.map(c => {
         const isRec = c.name === recommended;
         const sizeMB = (c.size / (1024 * 1024)).toFixed(1);
+        const typeStr = c.isCli ? 'cli' : 'gui';
         return {
           value: c.name,
-          label: `${c.name} (${sizeMB} MB) ${isRec ? picocolors.green('[recommended]') : ''}`
+          label: `${c.name} (${sizeMB} MB) ${picocolors.dim(`[${typeStr}]`)} ${isRec ? picocolors.green('[recommended]') : ''}`
         };
       });
 
@@ -163,8 +167,11 @@ async function runInstallerWizard(targetFolder) {
       
       // Clear the clack select prompt printout
       clearLines(2);
+      const chosenCandidate = candidates.find(c => c.name === selectedExe);
+      const chosenSizeMB = chosenCandidate ? (chosenCandidate.size / (1024 * 1024)).toFixed(1) : '0.0';
+      const chosenTypeStr = chosenCandidate && chosenCandidate.isCli ? 'cli' : 'gui';
       console.log(`${picocolors.cyan('◆')}  main exe`);
-      console.log(`${picocolors.cyan('│')}  ${picocolors.bold(selectedExe)}`);
+      console.log(`${picocolors.cyan('│')}  ${picocolors.bold(selectedExe)} (${chosenSizeMB} MB) ${picocolors.dim(`[${chosenTypeStr}]`)}`);
       console.log(`${picocolors.cyan('│')}`);
     }
 
@@ -212,6 +219,7 @@ async function runInstallerWizard(targetFolder) {
 
     // 5.5. PATH integration prompt for CLI apps
     let shouldAddToPath = false;
+    let shouldCreateStartMenuShortcut = true;
     if (isCli) {
       console.log(`${picocolors.cyan('◆')}  cli utility detected`);
       console.log(`${picocolors.cyan('│')}  this app runs in the console`);
@@ -232,6 +240,23 @@ async function runInstallerWizard(targetFolder) {
       clearLines(2);
       console.log(`${picocolors.cyan('◇')}  add to environment path?`);
       console.log(`${picocolors.cyan('│')}  ${shouldAddToPath ? 'yes' : 'no'}`);
+      console.log(`${picocolors.cyan('│')}`);
+
+      const shortcutConfirm = await confirm({
+        message: 'create start menu shortcut?',
+        initialValue: false
+      });
+
+      if (typeof shortcutConfirm === 'symbol') {
+        console.log(`${picocolors.cyan('└')}  cancelled\n`);
+        return;
+      }
+
+      shouldCreateStartMenuShortcut = shortcutConfirm;
+
+      clearLines(2);
+      console.log(`${picocolors.cyan('◇')}  create start menu shortcut?`);
+      console.log(`${picocolors.cyan('│')}  ${shouldCreateStartMenuShortcut ? 'yes' : 'no'}`);
       console.log(`${picocolors.cyan('│')}`);
     }
 
@@ -268,13 +293,15 @@ async function runInstallerWizard(targetFolder) {
     }
 
     // Step B: Create Start Menu Shortcut
-    await runInstallStep('creating shortcuts', async () => {
-      await createShortcut({
-        shortcutPath: shortcutPaths.startMenu,
-        targetPath: installedExePath,
-        description: `shortcut for ${appName}`
+    if (shouldCreateStartMenuShortcut) {
+      await runInstallStep('creating start menu shortcut', async () => {
+        await createShortcut({
+          shortcutPath: shortcutPaths.startMenu,
+          targetPath: installedExePath,
+          description: `shortcut for ${appName}`
+        });
       });
-    });
+    }
 
     // Step C: Registry Uninstaller setup
     // Note: We always pass both shortcut paths to the registry uninstaller so it is ready
@@ -287,7 +314,7 @@ async function runInstallerWizard(targetFolder) {
         mainExePath: installedExePath,
         version,
         publisher,
-        startMenuShortcutPath: shortcutPaths.startMenu,
+        startMenuShortcutPath: shouldCreateStartMenuShortcut ? shortcutPaths.startMenu : '',
         desktopShortcutPath: shortcutPaths.desktop,
         isSystemWide,
         addedToPathDir: shouldAddToPath ? addedPathDir : null

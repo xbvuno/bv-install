@@ -4,13 +4,14 @@ const path = require('path');
 const picocolors = require('picocolors');
 const { detectExecutables } = require('./core/detector');
 const { runInstallerWizard } = require('./ui/prompts');
+const pkg = require('../package.json');
 
 const program = new Command();
 
 program
   .name('bv-install')
   .description('Transform Windows portable folders into native installed applications.')
-  .version('1.0.0')
+  .version(pkg.version)
   .argument('[folder]', 'Path to the portable application folder', '.')
   .option('-s, --just-scan', 'Scan the folder, detect the main executable, and exit')
   .option('--just-add-path', 'Add the target folder directly to the environment PATH and exit')
